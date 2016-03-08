@@ -32,9 +32,16 @@ def parse_args():
 """0000000000000000:0000000000000001/64
 
     """))
+
     parser.add_argument("ip6addr", 
         help = ("IPv6 address or network prefix (compressed, exploded IPv6"
                 " format or full binary format)"))
+
+    parser.add_argument("--print_all_subnets_counts",
+        help = ("When given a network prefix, it forces to compute the "
+                "number of subnets available for each subnet size"),
+        action="store_true")
+
     return parser.parse_args()
 
 def get_binary_address(addr):
@@ -95,7 +102,13 @@ def convert_from_binary(addr):
     # Remove final column
     return (output_addr[:-1] + "/" + token[1])
 
-def print_addr_info(addr):
+def print_available_subnets_of_prefix(addr_obj, n):
+    print("   * {num} (2^{exp} or {num:.2g}) subnets /{length}".format(       
+          num = 2**(n-addr_obj.prefixlen),                            
+          exp = (n-addr_obj.prefixlen),
+          length = n))
+
+def print_addr_info(addr, show_all_subnet_sizes):
     is_network = False
 
     # Convert the address if provided in binary form
@@ -127,8 +140,10 @@ def print_addr_info(addr):
         print("Last address assignable: ")
         print(address_reprs(addr_obj[-1]))       
 
-        print("Total number of addresses: %d (%.2g)\n" % (addr_obj.numhosts,
-                                                          addr_obj.numhosts))
+        print("Total number of addresses: {num} (2^{exp} or {num:.2g})"
+              "\n".format(num = addr_obj.numhosts,
+                          exp = 128-addr_obj.prefixlen))
+        print("\n")
 
         if (addr_obj.prefixlen <= 126):
             reserved_addresses += 1
@@ -144,13 +159,25 @@ def print_addr_info(addr):
 
         if reserved_addresses > 0:
             print("Total number of addresses (Excluding \"reserved\" "
-                  "addresses): %d (%.2g)\n" % (
-                addr_obj.numhosts-reserved_addresses,
-                addr_obj.numhosts-reserved_addresses))
+                  "addresses): {num} ({num:.2g})\n".format(
+                  num = addr_obj.numhosts-reserved_addresses))
 
-
+        if show_all_subnet_sizes:
+            print("\nThis prefix can contain one of the following:")
+            for n in range(addr_obj.prefixlen + 1, 128)[::-1]:
+                print_available_subnets_of_prefix(addr_obj, n)
+        else:
+            if addr_obj.prefixlen < 64:
+                print("\nThis prefix can contain one of the following:")
+                print_available_subnets_of_prefix(addr_obj, 64)
+            if addr_obj.prefixlen < 56:
+                print_available_subnets_of_prefix(addr_obj, 56)
+            if addr_obj.prefixlen < 48:
+                print_available_subnets_of_prefix(addr_obj, 48)
+            if addr_obj.prefixlen < 32:
+                print_available_subnets_of_prefix(addr_obj, 32)
 
 if __name__ == "__main__":
     args = parse_args()
-    print_addr_info(args.ip6addr)
+    print_addr_info(args.ip6addr, args.print_all_subnets_counts)
 
