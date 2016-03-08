@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+# -*- coding: utf8 -*-
 """
 	Given an IPv6 address or IPv6 network prefix, it shows all information
         about assignable addresses and address formats.
@@ -7,7 +8,37 @@
 import ipaddr #require external library
 import argparse
 import re
-#from termcolor import colored
+import sys
+import os
+import struct
+import termios
+import fcntl
+
+WIDE_TERMINAL_SIZE = 154
+
+class bcolors:
+    HEADER = '\033[95m'
+    OKBLUE = '\033[94m'
+    OKGREEN = '\033[92m'
+    WARNING = '\033[93m'
+    FAIL = '\033[91m'
+    ENDC = '\033[0m'
+    BOLD = '\033[1m'
+    UNDERLINE = '\033[4m'
+
+def get_terminal_width():
+    try:
+        fd = os.open(os.ctermid(), os.O_RDONLY)
+    except:
+        return None
+    try:
+        cr = struct.unpack('hh', fcntl.ioctl(fd, termios.TIOCGWINSZ, "1234"))
+        os.close(fd)
+        return cr[1]
+    except:
+        os.close(fd)
+        return None
+    
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -31,7 +62,10 @@ def parse_args():
 """0000000000001000:0001011111011000:0000000000000000:0000000000000000:"""
 """0000000000000000:0000000000000001/64
 
-    """))
+           Note: Some output details may be missing if terminal width is
+                 shorter than {termsize} characters.
+
+    """.format(termsize = WIDE_TERMINAL_SIZE)))
 
     parser.add_argument("ip6addr", 
         help = ("IPv6 address or network prefix (compressed, exploded IPv6"
@@ -47,35 +81,51 @@ def parse_args():
                "sub-prefixes of length N contained in the prefix provided"),
                type = int)
 
+    parser.add_argument("--use-colors",
+        help = ("Specify if force using or not using colors in the terminal "
+                "output. By default colors are used, except when running "
+                "a the program in a pipe"), default = sys.stdout.isatty(),
+               type = bool)
 
     return parser.parse_args()
 
-def get_binary_address(addr):
+def get_binary_address(addr, is_network = False, use_colors = False):
     bin_str = bin(int(addr)).replace("0b","").zfill(128)
-    return "{0}:{1}:{2}:{3}:{4}:{5}:{6}:{7}".format(
-        bin_str[0:16],
-        bin_str[16:32],
-        bin_str[32:48],
-        bin_str[48:64],
-        bin_str[64:80],
-        bin_str[80:96],
-        bin_str[96:112],
-        bin_str[112:128],
-    )
+    out_str = ""
+    if is_network and use_colors: out_str += bcolors.OKBLUE
+    for i in xrange(128):
+        if is_network and i == addr.prefixlen and use_colors:
+            out_str += bcolors.ENDC
+        if (i % 16 == 0) and i != 0:
+            out_str += ":"
+        out_str += bin_str[i]
 
-def address_reprs(addr_obj):
+    return out_str
+
+def address_reprs(addr_obj, use_colors = False, wide_output = False):
     prefixlen_str = ""
+    is_network = False
     if (type(addr_obj) == ipaddr.IPv6Network) and (addr_obj.prefixlen < 128):
         prefixlen_str = "/{0}".format(addr_obj.prefixlen)
-    return ("  (Compressed)  {compr}\n"
-            "    (Exploded)  {extend}\n"
-            "      (Binary)  {binary}{prefix}\n".format(
+        is_network = True
+    out_str = (u"  (Compressed)  {compr}\n"
+               u"    (Exploded)  {extend}\n"
+               u"      (Binary)  {binary}{prefix}".format(
                 compr = str(addr_obj),
-                extend = addr_obj.exploded,
-                binary = get_binary_address(addr_obj),
-                prefix = prefixlen_str,
-            )
-           )
+                extend = (bcolors.OKGREEN + addr_obj.exploded + bcolors.ENDC),
+                binary = get_binary_address(addr_obj, is_network, use_colors),
+                prefix = prefixlen_str))
+    if is_network and wide_output:
+        if use_colors: out_str += bcolors.FAIL
+        out_str += (u"\n                ↑          ↑                 ↑  "
+                    u"↑                ↑        ↑       ↑             "
+                    u"                                                "
+                    u"      ↑\n                /1         /12         "
+                    u"     /29 /32              /48      /56     /64  "
+                    u"                                                "
+                    u"               /128")
+        if use_colors: out_str += bcolors.ENDC
+    return out_str
 
 def address_type_str(addr):
     if addr.is_link_local:
@@ -128,7 +178,8 @@ def get_mac_addr(addr):
     return ":".join([hex(x)[2:].zfill(2) for x in mac_bytes])
 
 
-def print_addr_info(addr, show_all_subnet_sizes, deaggregate_to = False):
+def print_addr_info(addr, show_all_subnet_sizes, deaggregate_to = False,
+                    use_colors = False, wide_output = False):
     """ Show all available information about an IPv6 prefix or address """
     is_network = False
 
@@ -151,7 +202,7 @@ def print_addr_info(addr, show_all_subnet_sizes, deaggregate_to = False):
     if addr_obj.version != 6: return
 
     print("Address:")
-    print(address_reprs(addr_obj))
+    print(address_reprs(addr_obj, use_colors, wide_output))
 
     print("Address type is: {addrtype}\n".format(
         addrtype = address_type_str(addr_obj)))
@@ -161,8 +212,10 @@ def print_addr_info(addr, show_all_subnet_sizes, deaggregate_to = False):
     # from the host's MAC address.
     if not is_network and (((int(addr_obj) >> 24) & 0xffff) == 0xfffe):
         print("This address might have been autogenerated by an "
-              "host with MAC address: {mac}".format(
-              mac = get_mac_addr(addr_obj)))
+              "host with MAC address: {color1}{mac}{color2}".format(
+              mac = get_mac_addr(addr_obj),
+              color1 = bcolors.FAIL if use_colors else "",
+              color2 = bcolors.ENDC if use_colors else ""))
 
     if is_network:
         reserved_addresses = 0
@@ -175,9 +228,12 @@ def print_addr_info(addr, show_all_subnet_sizes, deaggregate_to = False):
         print("Last address assignable: ")
         print(address_reprs(addr_obj[-1]))       
 
-        print("Total number of addresses: {num} (2^{exp} or {num:.2g})"
-              "\n".format(num = addr_obj.numhosts,
-                          exp = 128-addr_obj.prefixlen))
+        print("\nTotal number of addresses: "
+              "{color1}{num} (2^{exp} or {num:.2g})"
+              "{color2}\n".format(num = addr_obj.numhosts,
+                  exp = 128-addr_obj.prefixlen,
+                  color1 = bcolors.WARNING if use_colors else "",
+                  color2 = bcolors.ENDC if use_colors else ""))
         print("\n")
 
         if (addr_obj.prefixlen <= 126):
@@ -222,9 +278,14 @@ def print_addr_info(addr, show_all_subnet_sizes, deaggregate_to = False):
 
 if __name__ == "__main__":
     args = parse_args()
+    wide_terminal = (get_terminal_width() >= WIDE_TERMINAL_SIZE)
     if args.show_deaggregated_into:
         print_addr_info(args.ip6addr, args.print_all_subnets_counts,
-                        args.show_deaggregated_into)
+                        args.show_deaggregated_into,
+                        use_colors = args.use_colors,
+                        wide_output = wide_terminal)
     else:
-        print_addr_info(args.ip6addr, args.print_all_subnets_counts)
+        print_addr_info(args.ip6addr, args.print_all_subnets_counts,
+                        use_colors = args.use_colors,
+                        wide_output = wide_terminal)
 
