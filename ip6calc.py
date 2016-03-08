@@ -37,10 +37,16 @@ def parse_args():
         help = ("IPv6 address or network prefix (compressed, exploded IPv6"
                 " format or full binary format)"))
 
-    parser.add_argument("--print_all_subnets_counts",
+    parser.add_argument("--print-all-subnets-counts",
         help = ("When given a network prefix, it forces to compute the "
                 "number of subnets available for each subnet size"),
         action="store_true")
+
+    parser.add_argument("--show-deaggregated-into",
+        help = ("When given a network prefix, it shows all the IPv6 "
+               "sub-prefixes of length N contained in the prefix provided"),
+               type = int)
+
 
     return parser.parse_args()
 
@@ -108,7 +114,7 @@ def print_available_subnets_of_prefix(addr_obj, n):
           exp = (n-addr_obj.prefixlen),
           length = n))
 
-def print_addr_info(addr, show_all_subnet_sizes):
+def print_addr_info(addr, show_all_subnet_sizes, deaggregate_to = False):
     is_network = False
 
     # Convert the address if provided in binary form
@@ -177,7 +183,19 @@ def print_addr_info(addr, show_all_subnet_sizes):
             if addr_obj.prefixlen < 32:
                 print_available_subnets_of_prefix(addr_obj, 32)
 
+        if deaggregate_to and deaggregate_to > addr_obj.prefixlen:
+            print("\nList of /{deag_len} prefixes deaggregated from the "
+                  "{orig_len} provided:".format(deag_len = deaggregate_to,
+                  orig_len = addr_obj.prefixlen))
+            for p in addr_obj.Subnet(deaggregate_to - addr_obj.prefixlen):
+                print(p.exploded)
+            
+
 if __name__ == "__main__":
     args = parse_args()
-    print_addr_info(args.ip6addr, args.print_all_subnets_counts)
+    if args.show_deaggregated_into:
+        print_addr_info(args.ip6addr, args.print_all_subnets_counts,
+                        args.show_deaggregated_into)
+    else:
+        print_addr_info(args.ip6addr, args.print_all_subnets_counts)
 
