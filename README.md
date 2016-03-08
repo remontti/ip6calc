@@ -22,6 +22,7 @@ Information about a single IPv6 address
 
 
 Example information about an IPv6 /50 prefix:
+
 	# ./ip6calc.py 2001:0000:fedc:8000::/50
 	Address:
 	  (Compressed)  2001:0:fedc:8000::/50
