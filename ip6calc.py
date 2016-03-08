@@ -141,6 +141,9 @@ def print_addr_info(addr, show_all_subnet_sizes, deaggregate_to = False):
     if ("/" in addr) and (int(addr.split("/")[-1]) != 128):
         is_network = True
         addr_obj = ipaddr.IPNetwork(addr)
+        # We immediately mask the address using the specified prefix length
+        # in order to avoid showing non-existing bits
+        addr_obj = addr_obj.masked()
     else:
         addr_obj = ipaddr.IPAddress(addr.split("/")[0])
 
